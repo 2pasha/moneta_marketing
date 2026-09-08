@@ -1,0 +1,106 @@
+.video-step {
+  position: relative;
+  width: 100vw;
+  height: 100svh;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
+}
+
+.video-step__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-step__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+}
+
+.video-step__progress-track {
+  width: min(60vw, 220px);
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+
+.video-step__progress-fill {
+  height: 100%;
+  background: #fff;
+  transition: width 0.15s ease-out;
+}
+
+.video-step__progress-label {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+
+.video-step__tap-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  border: none;
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.video-step__play-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.video-step__play-icon svg {
+  margin-left: 4px;
+}
+
+.video-step__tap-label {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.video-step__tagline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 20px;
+  padding: 32px 24px calc(24px + env(safe-area-inset-bottom, 0px));
+  /*background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent);*/
+  pointer-events: none;
+}
+
+.video-step__tagline p {
+  margin: 0;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  font-size: 70px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
