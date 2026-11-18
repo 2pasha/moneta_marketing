@@ -156,7 +156,7 @@ function SketchPlayCircle({ seed = 210948902, size = 76 }) {
 /**
  * Hand-sketched boiling progress bar for initial asset loading
  */
-function SketchLoader({ progress, seed = 210948902 }) {
+function SketchLoader({ progress, isExiting = false, seed = 210948902 }) {
   const trackFrames = useMemo(
     () =>
       variants((o) => roughRoundedRect(3, 3, 214, 16, 8, o), {
@@ -168,7 +168,13 @@ function SketchLoader({ progress, seed = 210948902 }) {
   )
 
   return (
-    <div className="video-step__loader-overlay" aria-live="polite">
+    <div
+      className={`video-step__loader-overlay ${
+        isExiting ? 'video-step__loader-overlay--exiting' : ''
+      }`}
+      aria-live="polite"
+      aria-hidden={isExiting}
+    >
       <div className="video-step__loader-box">
         <div className="video-step__loader-track">
           <div
@@ -209,6 +215,7 @@ export default function VideoOnboardingStep() {
   const [hasStarted, setHasStarted] = useState(false)
   // 'loading' | 'idle' | 'playing' | 'paused' | 'ended' | 'exited'
   const [phase, setPhase] = useState('loading')
+  const [showLoader, setShowLoader] = useState(true)
   const [loadProgress, setLoadProgress] = useState(0)
   const [progress, setProgress] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
@@ -342,6 +349,9 @@ export default function VideoOnboardingStep() {
       ? document.fonts.ready.catch(() => {})
       : Promise.resolve()
 
+    let readyTimer = null
+    let unmountTimer = null
+
     Promise.all([
       ...videoIds.map((id) => fetchVideoAsset(id)),
       posterPromise,
@@ -354,11 +364,19 @@ export default function VideoOnboardingStep() {
         video.load()
       }
       setLoadProgress(100)
-      setPhase('idle')
+      readyTimer = setTimeout(() => {
+        if (isCancelled) return
+        setPhase('idle')
+        unmountTimer = setTimeout(() => {
+          if (!isCancelled) setShowLoader(false)
+        }, 750)
+      }, 220)
     })
 
     return () => {
       isCancelled = true
+      clearTimeout(readyTimer)
+      clearTimeout(unmountTimer)
       clearTimeout(holdTimerRef.current)
       clearTimeout(toastTimerRef.current)
       Object.values(inflightFetchRef.current).forEach((ctrl) => ctrl.abort())
@@ -776,8 +794,12 @@ export default function VideoOnboardingStep() {
         )}
 
         {/* Initial Asset Loader */}
-        {phase === 'loading' && (
-          <SketchLoader progress={loadProgress} seed={210948902} />
+        {showLoader && (
+          <SketchLoader
+            progress={loadProgress}
+            isExiting={phase !== 'loading'}
+            seed={210948902}
+          />
         )}
 
         {/* Initial Minimal Tap-to-Start Overlay: only Play button + "натисни" without background */}
