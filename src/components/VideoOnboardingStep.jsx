@@ -6,9 +6,10 @@ import {
   DrawablyDivider,
   DrawablyUnderline,
 } from 'drawably/react'
-import { roughCircle, variants } from 'drawably'
+import { roughCircle, roughRoundedRect, variants } from 'drawably'
 import 'drawably/style.css'
 import 'drawably/font.css'
+import { LiveOrb } from './ui/LiveOrb.jsx'
 import './VideoOnboardingStep.css'
 
 const BASE_URL = import.meta.env.BASE_URL || '/'
@@ -152,11 +153,63 @@ function SketchPlayCircle({ seed = 210948902, size = 76 }) {
   )
 }
 
+/**
+ * Hand-sketched boiling progress bar for initial asset loading
+ */
+function SketchLoader({ progress, seed = 210948902 }) {
+  const trackFrames = useMemo(
+    () =>
+      variants((o) => roughRoundedRect(3, 3, 214, 16, 8, o), {
+        seed,
+        roughness: 0.6,
+        boil: 0.4,
+      }),
+    [seed]
+  )
+
+  return (
+    <div className="video-step__loader-overlay" aria-live="polite">
+      <div className="video-step__loader-box">
+        <div className="video-step__loader-track">
+          <div
+            className="video-step__loader-fill"
+            style={{ width: `${progress}%` }}
+          />
+          <svg
+            className="drawably-svg video-step__loader-svg"
+            viewBox="0 0 220 22"
+            style={{ '--drawably-stroke': '#ffffff', '--drawably-width': 2 }}
+          >
+            {trackFrames.map((d, i) => (
+              <path
+                key={i}
+                d={d}
+                className="drawably-boil"
+                data-i={String(i)}
+              />
+            ))}
+          </svg>
+        </div>
+        <span className="video-step__loader-label">{progress}%</span>
+      </div>
+    </div>
+  )
+}
+
+const ESTIMATED_SIZES = {
+  '1': 6116352,
+  '2': 7340032,
+  '3': 6186598,
+  '4': 9856614,
+  '5': 2163712,
+}
+
 export default function VideoOnboardingStep() {
   const [videoId, setVideoId] = useState('1')
   const [hasStarted, setHasStarted] = useState(false)
-  // 'idle' | 'playing' | 'paused' | 'ended' | 'exited'
-  const [phase, setPhase] = useState('idle')
+  // 'loading' | 'idle' | 'playing' | 'paused' | 'ended' | 'exited'
+  const [phase, setPhase] = useState('loading')
+  const [loadProgress, setLoadProgress] = useState(0)
   const [progress, setProgress] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -207,23 +260,111 @@ export default function VideoOnboardingStep() {
       })
   }, [])
 
-  // Mount initial video src and cleanup blobs on unmount
+  // Preload all video assets, poster, and fonts on initial mount with byte-level progress
   useEffect(() => {
-    const video = videoRef.current
-    if (video) {
-      video.src = VIDEOS['1'].src
-      video.load()
+    let isCancelled = false
+    const videoIds = Object.keys(VIDEOS)
+    const receivedByVideo = {}
+    const totalByVideo = { ...ESTIMATED_SIZES }
+
+    const updateOverallProgress = () => {
+      if (isCancelled) return
+      const totalExpected = videoIds.reduce((sum, id) => sum + (totalByVideo[id] || ESTIMATED_SIZES[id]), 0)
+      const totalReceived = videoIds.reduce((sum, id) => sum + (receivedByVideo[id] || 0), 0)
+      if (totalExpected > 0) {
+        const pct = Math.min(99, Math.round((totalReceived / totalExpected) * 100))
+        setLoadProgress(pct)
+      }
     }
-    preloadVideoBranch('2')
-    preloadVideoBranch('3')
+
+    async function fetchVideoAsset(id) {
+      if (blobCacheRef.current[id]) {
+        receivedByVideo[id] = totalByVideo[id]
+        updateOverallProgress()
+        return
+      }
+
+      const controller = new AbortController()
+      inflightFetchRef.current[id] = controller
+
+      try {
+        const response = await fetch(VIDEOS[id].src, { signal: controller.signal })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+        const contentLength = Number(response.headers.get('Content-Length'))
+        if (contentLength > 0) {
+          totalByVideo[id] = contentLength
+        }
+
+        if (!response.body) {
+          const blob = await response.blob()
+          receivedByVideo[id] = totalByVideo[id]
+          blobCacheRef.current[id] = URL.createObjectURL(blob)
+          updateOverallProgress()
+          return
+        }
+
+        const reader = response.body.getReader()
+        const chunks = []
+        let received = 0
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          chunks.push(value)
+          received += value.length
+          receivedByVideo[id] = received
+          updateOverallProgress()
+        }
+
+        const blob = new Blob(chunks, { type: 'video/mp4' })
+        blobCacheRef.current[id] = URL.createObjectURL(blob)
+        receivedByVideo[id] = totalByVideo[id]
+        updateOverallProgress()
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          receivedByVideo[id] = totalByVideo[id]
+          updateOverallProgress()
+        }
+      } finally {
+        delete inflightFetchRef.current[id]
+      }
+    }
+
+    const posterPromise = new Promise((resolve) => {
+      const img = new Image()
+      img.onload = resolve
+      img.onerror = resolve
+      img.src = VIDEOS['1'].poster
+    })
+
+    const fontsPromise = document.fonts?.ready
+      ? document.fonts.ready.catch(() => {})
+      : Promise.resolve()
+
+    Promise.all([
+      ...videoIds.map((id) => fetchVideoAsset(id)),
+      posterPromise,
+      fontsPromise,
+    ]).then(() => {
+      if (isCancelled) return
+      const video = videoRef.current
+      if (video) {
+        video.src = blobCacheRef.current['1'] || VIDEOS['1'].src
+        video.load()
+      }
+      setLoadProgress(100)
+      setPhase('idle')
+    })
 
     return () => {
+      isCancelled = true
       clearTimeout(holdTimerRef.current)
       clearTimeout(toastTimerRef.current)
       Object.values(inflightFetchRef.current).forEach((ctrl) => ctrl.abort())
       Object.values(blobCacheRef.current).forEach((url) => URL.revokeObjectURL(url))
     }
-  }, [preloadVideoBranch])
+  }, [])
 
   const applyPlaybackSpeed = useCallback((fast, showFeedback = true) => {
     is2xRef.current = fast
@@ -522,7 +663,7 @@ export default function VideoOnboardingStep() {
         />
 
         {/* Top Stories Progress Bar + Navigation Header */}
-        {phase !== 'exited' && (
+        {phase !== 'loading' && phase !== 'exited' && (
           <div className="video-step__top-bar" onClick={(e) => e.stopPropagation()}>
             <div className="video-step__stories-track" aria-label="Прогрес історії">
               {Array.from({ length: TOTAL_STEPS }).map((_, idx) => {
@@ -632,6 +773,11 @@ export default function VideoOnboardingStep() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Initial Asset Loader */}
+        {phase === 'loading' && (
+          <SketchLoader progress={loadProgress} seed={210948902} />
         )}
 
         {/* Initial Minimal Tap-to-Start Overlay: only Play button + "натисни" without background */}
@@ -752,6 +898,14 @@ export default function VideoOnboardingStep() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="video-step__choices-container">
+              <div className="video-step__orb-wrapper">
+                <LiveOrb
+                  size={84}
+                  variant="webgl"
+                  colors={['#F5B82E', '#FFF6DC', '#C4831A']}
+                />
+              </div>
+
               <div
                 className={`video-step__choices-grid ${
                   currentConfig.choices.length === 2
